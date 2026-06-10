@@ -1,153 +1,141 @@
-# Pingash Outreach Bot
+# Conformal Arena
 
-WhatsApp → Claude → Email. Finds founders, drafts messages, asks you before sending.
+**Distribution-free uncertainty quantification for LLM leaderboard rankings.**
 
-## Architecture
+> *When the Arena says GPT-4o is ranked #2 and Claude is ranked #3, is that difference real — or just noise?*
 
-```
-You (WhatsApp)
-    ↓
-Twilio ($0/month for sandbox)
-    ↓
-FastAPI on Railway (free tier)
-    ↓
-Claude Haiku  → intent parsing     (~$0.001/day)
-Claude Sonnet → message generation (~$0.02/outreach)
-    ↓
-Hunter.io → find founder email (free: 25/month)
-    ↓
-Resend → send email (free: 3,000/month)
-```
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-arena--conformal.vercel.app-blue)](https://arena-conformal.vercel.app)
+[![GitHub](https://img.shields.io/badge/GitHub-jarvis0869%2Farena--conformal-black)](https://github.com/jarvis0869/arena-conformal)
 
-**Total cost per outreach: ~$0.02**
+## Live Demo
+
+**[arena-conformal.vercel.app](https://arena-conformal.vercel.app)**
+
+Interactive leaderboard with conformal prediction sets, model comparison, bootstrap CI comparison, and methodology explanation.
 
 ---
 
-## Setup (30 minutes)
+## What Is This?
 
-### 1. Get API Keys (all free tiers)
+[Chatbot Arena (LMArena)](https://lmarena.ai) is the most influential LLM evaluation platform. Its Elo-based rankings drive deployment decisions, investment theses, and research priorities across the AI industry.
 
-| Service | Get key at | Cost |
-|---------|-----------|------|
-| Anthropic | console.anthropic.com | ~$0.02/outreach |
-| Twilio | twilio.com/try-twilio | Free sandbox |
-| Hunter.io | hunter.io | 25 free searches/month |
-| Resend | resend.com | 3,000 free emails/month |
+But those rankings are **point estimates** — a single number with no uncertainty attached. When Arena says Model A is #3 and Model B is #5, it doesn't tell you if that gap is real or noise.
 
-### 2. Deploy to Railway (free)
+We applied **split conformal prediction** to 135,634 real human preference votes to construct prediction sets over model rankings with formal coverage guarantees:
 
-```bash
-# Install Railway CLI
-npm install -g @railway/cli
+> P(true rank ∈ prediction set) ≥ 1 − α
 
-# Login
-railway login
-
-# Deploy
-cd outreach-bot
-railway init
-railway up
-```
-
-Copy your Railway URL (e.g. `https://outreach-bot.railway.app`)
-
-### 3. Set Environment Variables in Railway
-
-Go to Railway dashboard → your project → Variables:
-
-```
-ANTHROPIC_API_KEY=sk-ant-...
-HUNTER_API_KEY=your-hunter-key
-RESEND_API_KEY=re_...
-FROM_EMAIL=you@yourdomain.com
-GITHUB_URL=https://github.com/yourusername
-```
-
-### 4. Set up Twilio WhatsApp Sandbox
-
-1. Go to twilio.com → Messaging → Try WhatsApp
-2. Follow sandbox instructions (send "join [word]" to their number)
-3. Set webhook URL: `https://your-railway-url.railway.app/whatsapp`
-4. Method: POST
-
-### 5. Test it
-
-Text your Twilio sandbox number:
-```
-Novoflow
-```
-
-Bot responds with founder info + draft message. Reply YES to send.
+No distributional assumptions. No model assumptions. Finite-sample exact. Built on [Angelopoulos & Bates (2021)](https://arxiv.org/abs/2107.07511).
 
 ---
 
-## Usage
+## Key Findings
+
+| Finding | Result |
+|---------|--------|
+| Adjacent pairs indistinguishable | **100%** at 90% coverage |
+| Top model (Gemini 2.5 Pro) prediction set | **[1, 8]** — could be anywhere in top 8 |
+| Code rankings more uncertain than non-code | **55%** wider (q̂: 9.88 vs 6.38) |
+| Ranking drift early → late period | **+47%** set width |
+| Arena bootstrap CIs overconfident | **80%** of models |
+
+**In plain English:** The AI community treats Arena rankings as ground truth. They're not. Most ranking differences are within the noise floor, and Arena's existing confidence intervals systematically underestimate this uncertainty.
+
+---
+
+## Method
+
+**1. Split** — 98,348 real Arena battles (ties removed) into training (60%) and calibration (40%).
+
+**2. Bootstrap** — Resample training data 100× with replacement, compute Elo rankings each time. Predicted rank = median across bootstraps.
+
+**3. Calibrate** — Compute nonconformity scores on held-out data: score = |true rank − predicted rank|.
+
+**4. Threshold** — q̂ = ⌈(1−α)(1+1/n)⌉-th quantile of scores. The (1+1/n) correction makes the guarantee finite-sample exact.
+
+**5. Predict** — Prediction set = [predicted rank − q̂, predicted rank + q̂] clipped to [1, 48].
+
+The coverage guarantee holds regardless of how good or bad the Elo model is. The only assumption is exchangeability of the calibration data, which holds by random splitting.
+
+---
+
+## Results
+
+### Main Finding: Leaderboard Rankings Are Noise
+
+At 90% coverage, **47/47 adjacent model pairs are statistically indistinguishable**. The top model's prediction set spans 8 positions. The middle of the leaderboard (ranks 10–35) is one undifferentiated blob.
+
+### Category Slicing
+
+Splitting battles by `is_code` reveals code rankings are 55% more uncertain than non-code rankings. A single combined leaderboard blends different signal-to-noise ratios.
+
+### Temporal Analysis
+
+Prediction set width grows 47% from early to late periods. Individual models drift dramatically:
+
+| Model | Early | Late | Shift |
+|-------|-------|------|-------|
+| llama-4-maverick-17b | #26 | #42 | ↓16 |
+| claude-3.7-sonnet | #31 | #44 | ↓13 |
+| claude-3.5-haiku | #33 | #45 | ↓12 |
+
+### Arena Is Overconfident
+
+For **80% of models**, our distribution-free CP sets are wider than Arena's bootstrap 95% CIs. Example: Gemini 2.5 Pro bootstrap CI is [1–2] but our CP set is [1–9].
+
+---
+
+## Files
 
 ```
-You:  Novoflow
-Bot:  👤 Georges Casassovici — Co-founder @ Novoflow
-      📧 georges@novoflow.io (87% confidence)
-      
-      📩 Draft:
-      Subject: teen founder → clinical AI co-op
-      
-      Georges — saw the Novoflow demo. EHR bridge problem 
-      is exactly what we hit at Aeyron Health (KITE/UHN 
-      clinical partnership, Google for Startups). Built 
-      revenue-generating LLM SaaS (Filld). Want to build 
-      with you this term. [GITHUB]
-      
-      Reply YES · NO · or give feedback
-
-You:  make it shorter
-Bot:  📝 Revised: [shorter version]
-
-You:  YES
-Bot:  ✅ Sent to Georges at georges@novoflow.io!
+conformal_arena.py          Core pipeline (Elo + bootstrap + CP)
+run_new.py                  Run on LMArena 140K dataset
+advanced_analysis.py        Category, vote efficiency, temporal, CI analyses
+conformal_data.json         Exported results for all 48 models
+models_data.js              JavaScript-ready data for the UI
+src/App.jsx                 React interactive dashboard
+*.png                       Publication-quality figures
 ```
 
 ---
 
-## Token Cost Breakdown
+## Figures
 
-| Action | Model | Tokens | Cost |
-|--------|-------|--------|------|
-| Parse intent | Haiku | ~50 in, 20 out | $0.000015 |
-| Find + generate | Sonnet | ~400 in, 150 out | $0.0018 |
-| Revision | Sonnet | ~450 in, 150 out | $0.0019 |
-| **Total per send** | | | **~$0.002** |
-
-Running 30 outreaches costs ~$0.06 in Claude tokens.
-
----
-
-## Using Claude Code Instead
-
-If you want to build/modify this interactively:
-
-```bash
-# Install Claude Code
-npm install -g @anthropic-ai/claude-code
-
-# Navigate to project
-cd outreach-bot
-
-# Start Claude Code
-claude
-
-# Then tell it what to add, e.g.:
-# "Add Apollo.io integration to find emails"
-# "Add a /status endpoint showing sent outreach count"
-# "Store sent outreach in Supabase instead of memory"
-```
+| Figure | Description |
+|--------|-------------|
+| `new_arena_rankings.png` | Main: point estimates vs conformal prediction sets |
+| `new_coverage_calibration.png` | Coverage guarantee holds at all levels |
+| `category_comparison.png` | Code vs non-code ranking uncertainty |
+| `vote_efficiency.png` | Prediction set width vs vote count |
+| `temporal_analysis.png` | Ranking stability over time |
+| `ci_comparison.png` | Arena bootstrap CIs vs conformal sets |
 
 ---
 
-## Upgrade Path
+## Data
 
-| When | Add |
-|------|-----|
-| Restart loses sessions | Supabase (free) for persistence |
-| 25 Hunter searches/month not enough | Apollo.io Basic ($49/mo) |
-| Want your own WhatsApp number | WhatsApp Business API via Twilio |
-| Want to track open rates | Add tracking pixel to emails |
+[LMArena Human Preference 140K](https://huggingface.co/datasets/lmarena-ai/arena-human-preference-140k) — 135,634 pairwise battles, 48 models, real human votes.
+
+---
+
+## References
+
+- Angelopoulos, A.N. and Bates, S. (2021). [A Gentle Introduction to Conformal Prediction.](https://arxiv.org/abs/2107.07511)
+- Chiang, W.-L. et al. (2024). [Chatbot Arena: An Open Platform for Evaluating LLMs by Human Preference.](https://arxiv.org/abs/2403.04132)
+- Gibbs, I. and Candès, E. (2021). [Adaptive Conformal Inference Under Distribution Shift.](https://arxiv.org/abs/2106.00170)
+
+---
+
+## Author
+
+**Pingash Vohra** — University of Waterloo (CS, Class of 2030)
+
+CEO & Co-founder, Aeyron Health
+
+---
+
+## Paper
+
+Draft in progress. Targeting COPA 2026 / NeurIPS workshop on Reliable ML.
+
+*If you're working on conformal prediction, LLM evaluation, or leaderboard methodology — reach out.*
