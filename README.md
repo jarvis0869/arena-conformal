@@ -1,58 +1,153 @@
-<<<<<<< HEAD
-# React + Vite
+# Pingash Outreach Bot
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+WhatsApp → Claude → Email. Finds founders, drafts messages, asks you before sending.
 
-Currently, two official plugins are available:
+## Architecture
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```
+You (WhatsApp)
+    ↓
+Twilio ($0/month for sandbox)
+    ↓
+FastAPI on Railway (free tier)
+    ↓
+Claude Haiku  → intent parsing     (~$0.001/day)
+Claude Sonnet → message generation (~$0.02/outreach)
+    ↓
+Hunter.io → find founder email (free: 25/month)
+    ↓
+Resend → send email (free: 3,000/month)
+```
 
-## React Compiler
+**Total cost per outreach: ~$0.02**
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## Setup (30 minutes)
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
-=======
-# Conformal Arena
+### 1. Get API Keys (all free tiers)
 
-**Distribution-free uncertainty quantification for LLM leaderboard rankings.**
+| Service | Get key at | Cost |
+|---------|-----------|------|
+| Anthropic | console.anthropic.com | ~$0.02/outreach |
+| Twilio | twilio.com/try-twilio | Free sandbox |
+| Hunter.io | hunter.io | 25 free searches/month |
+| Resend | resend.com | 3,000 free emails/month |
 
-Applied split conformal prediction to 135,634 real human preference votes from LMArena across 48 models.
+### 2. Deploy to Railway (free)
 
-## Key Findings
+```bash
+# Install Railway CLI
+npm install -g @railway/cli
 
-- **100% of adjacent model pairs are statistically indistinguishable** at 90% coverage
-- **Code rankings are 55% more uncertain** than non-code (q̂: 9.88 vs 6.38)
-- **Rankings shift over time** — prediction set width grows 47% from early to late periods
-- **Arena's bootstrap CIs are overconfident** for 80% of models vs our distribution-free sets
-- The #1 model (Gemini 2.5 Pro) has a prediction set of [1, 8] — it could be anywhere in the top 8
+# Login
+railway login
 
-## Method
+# Deploy
+cd outreach-bot
+railway init
+railway up
+```
 
-Split conformal prediction on bootstrapped Elo rankings. No distributional assumptions, no model assumptions. Finite-sample coverage guarantee: P(true rank ∈ set) ≥ 1-α.
+Copy your Railway URL (e.g. `https://outreach-bot.railway.app`)
 
-Based on Angelopoulos & Bates (2021), "A Gentle Introduction to Conformal Prediction."
+### 3. Set Environment Variables in Railway
 
-## Files
+Go to Railway dashboard → your project → Variables:
 
-- `conformal_arena.py` — Core pipeline (Elo + bootstrap + conformal prediction)
-- `run_new.py` — Run on the 140K LMArena dataset
-- `advanced_analysis.py` — Category slicing, vote efficiency, temporal, CI comparison
-- `conformal_data.json` — Exported results for all 48 models
-- `*.png` — Publication-quality figures
+```
+ANTHROPIC_API_KEY=sk-ant-...
+HUNTER_API_KEY=your-hunter-key
+RESEND_API_KEY=re_...
+FROM_EMAIL=you@yourdomain.com
+GITHUB_URL=https://github.com/yourusername
+```
 
-## Data
+### 4. Set up Twilio WhatsApp Sandbox
 
-LMArena Human Preference 140K dataset: [huggingface.co/datasets/lmarena-ai/arena-human-preference-140k](https://huggingface.co/datasets/lmarena-ai/arena-human-preference-140k)
+1. Go to twilio.com → Messaging → Try WhatsApp
+2. Follow sandbox instructions (send "join [word]" to their number)
+3. Set webhook URL: `https://your-railway-url.railway.app/whatsapp`
+4. Method: POST
 
-## Author
+### 5. Test it
 
-Pingash Vohra — University of Waterloo
+Text your Twilio sandbox number:
+```
+Novoflow
+```
 
-## Paper
+Bot responds with founder info + draft message. Reply YES to send.
 
-Draft in progress. Targeting COPA 2026 / NeurIPS workshop.
->>>>>>> origin/main
+---
+
+## Usage
+
+```
+You:  Novoflow
+Bot:  👤 Georges Casassovici — Co-founder @ Novoflow
+      📧 georges@novoflow.io (87% confidence)
+      
+      📩 Draft:
+      Subject: teen founder → clinical AI co-op
+      
+      Georges — saw the Novoflow demo. EHR bridge problem 
+      is exactly what we hit at Aeyron Health (KITE/UHN 
+      clinical partnership, Google for Startups). Built 
+      revenue-generating LLM SaaS (Filld). Want to build 
+      with you this term. [GITHUB]
+      
+      Reply YES · NO · or give feedback
+
+You:  make it shorter
+Bot:  📝 Revised: [shorter version]
+
+You:  YES
+Bot:  ✅ Sent to Georges at georges@novoflow.io!
+```
+
+---
+
+## Token Cost Breakdown
+
+| Action | Model | Tokens | Cost |
+|--------|-------|--------|------|
+| Parse intent | Haiku | ~50 in, 20 out | $0.000015 |
+| Find + generate | Sonnet | ~400 in, 150 out | $0.0018 |
+| Revision | Sonnet | ~450 in, 150 out | $0.0019 |
+| **Total per send** | | | **~$0.002** |
+
+Running 30 outreaches costs ~$0.06 in Claude tokens.
+
+---
+
+## Using Claude Code Instead
+
+If you want to build/modify this interactively:
+
+```bash
+# Install Claude Code
+npm install -g @anthropic-ai/claude-code
+
+# Navigate to project
+cd outreach-bot
+
+# Start Claude Code
+claude
+
+# Then tell it what to add, e.g.:
+# "Add Apollo.io integration to find emails"
+# "Add a /status endpoint showing sent outreach count"
+# "Store sent outreach in Supabase instead of memory"
+```
+
+---
+
+## Upgrade Path
+
+| When | Add |
+|------|-----|
+| Restart loses sessions | Supabase (free) for persistence |
+| 25 Hunter searches/month not enough | Apollo.io Basic ($49/mo) |
+| Want your own WhatsApp number | WhatsApp Business API via Twilio |
+| Want to track open rates | Add tracking pixel to emails |
